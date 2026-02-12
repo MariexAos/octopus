@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: shortlink-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: shortlink
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./scripts/migration.sql:/docker-entrypoint-initdb.d/migration.sql
+    networks:
+      - shortlink-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: shortlink-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - shortlink-net
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RocketMQ NameServer
+  rocketmq-nameserver:
+    image: apache/rocketmq:4.9.4
+    container_name: shortlink-rocketmq-nameserver
+    restart: unless-stopped
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPT: "-Xms512m -Xmx512m"
+    command: sh mqnamesrv
+    networks:
+      - shortlink-net
+
+  # RocketMQ Broker
+  rocketmq-broker:
+    image: apache/rocketmq:4.9.4
+    container_name: shortlink-rocketmq-broker
+    restart: unless-stopped
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    environment:
+      NAMESRV_ADDR: "rocketmq-nameserver:9876"
+      JAVA_OPT: "-Xms512m -Xmx512m"
+    command: sh mqbroker -c /etc/rocketmq/broker.conf
+    volumes:
+      - ./deployments/k8s/rocketmq/broker.conf:/etc/rocketmq/broker.conf
+      - rocketmq-data:/home/rocketmq/store
+    depends_on:
+      - rocketmq-nameserver
+    networks:
+      - shortlink-net
+
+  # Short Link Service
+  shortlink:
+    build:
+      context: .
+      dockerfile: deployments/docker/Dockerfile
+    container_name: shortlink-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_MODE: release
+      MYSQL_DSN: "root:password@tcp(mysql:3306)/shortlink?charset=utf8mb4&parseTime=True&loc=Local"
+      REDIS_ADDR: "redis:6379"
+      REDIS_PASSWORD: ""
+      REDIS_DB: 0
+      ROCKETMQ_NAMESERVER: "rocketmq-nameserver:9876"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rocketmq-nameserver:
+        condition: service_started
+    networks:
+      - shortlink-net
+
+volumes:
+  mysql-data:
+  redis-data:
+  rocketmq-data:
+
+networks:
+  shortlink-net:
+    driver: bridge
