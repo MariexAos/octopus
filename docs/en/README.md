@@ -1,11 +1,11 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Go-1.26+-00ADD8?style=for-the-badge&logo=go" alt="Go Version">
-  <img src="https://img.shields.io/badge/Gin-1.9+-008EC4?style=for-the-badge&logo=gin" alt="Gin Version">
+  <img src="https://img.shields.io/badge/Gin-1.11+-008EC4?style=for-the-badge&logo=gin" alt="Gin Version">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
   <img src="https://img.shields.io/badge/coverage-90%25+-brightgreen?style=for-the-badge" alt="Coverage">
 </p>
 
-<h1 align="center">🐙 Octopus - Short Link Service</h1>
+<h1 align="center">Octopus - Short Link Service</h1>
 
 <p align="center">
   <b>A high-performance, scalable short link service built with Go best practices</b>
@@ -18,10 +18,6 @@
   <a href="#configuration">Configuration</a> •
   <a href="#deployment">Deployment</a> •
   <a href="#architecture">Architecture</a>
-</p>
-
-<p align="center">
-  <a href="docs/en/README.md">English</a> | <a href="docs/zh/README.md">中文</a>
 </p>
 
 ---
@@ -316,5 +312,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/MariexAos">MariexAos</a>
+  Made with heart by <a href="https://github.com/MariexAos">MariexAos</a>
 </p>
