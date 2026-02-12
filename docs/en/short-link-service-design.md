@@ -1,73 +1,73 @@
-# 短链服务设计文档
+# Short Link Service Design Document
 
-## 概述
+## Overview
 
-本文档描述一个基于 Go/Gin 框架的短链服务设计方案，提供 URL 短链生成与跳转功能，支持带参数跳转、访问统计和热点分析。
+This document describes the design of a short link service based on Go/Gin framework, providing URL shortening and redirection capabilities with parameter merging, access analytics, and traffic source analysis.
 
-## 技术栈
+## Tech Stack
 
-| 组件 | 技术选型 |
-|------|----------|
-| Web框架 | Gin |
-| 编码算法 | Base32 |
-| 缓存 | Redis |
+| Component | Technology |
+|-----------|------------|
+| Web Framework | Gin |
+| Encoding Algorithm | Base32 |
+| Cache | Redis |
 | Bloom Filter | Redis Bloom Filter |
-| 数据库 | MySQL |
-| 消息队列 | RocketMQ |
-| 数据仓库 | ClickHouse/Hive |
+| Database | MySQL |
+| Message Queue | RocketMQ |
+| Data Warehouse | ClickHouse/Hive |
 
-## 一、应用架构图
+## 1. Application Architecture
 
 ```mermaid
 graph TB
-    subgraph "客户端层"
-        Client[客户端浏览器]
+    subgraph "Client Layer"
+        Client[Client Browser]
     end
 
-    subgraph "API网关层"
-        Gateway[API网关/Nginx]
+    subgraph "API Gateway Layer"
+        Gateway[API Gateway/Nginx]
     end
 
-    subgraph "短链服务层"
-        Router[GIN路由器]
+    subgraph "Short Link Service Layer"
+        Router[GIN Router]
 
-        subgraph "生成模块"
-            GenAPI[生成短链API]
-            Encoder[Base32编码器]
-            CollisionCheck[碰撞检查器]
+        subgraph "Generation Module"
+            GenAPI[Generate Short Link API]
+            Encoder[Base32 Encoder]
+            CollisionCheck[Collision Checker]
             BloomFilter[Redis Bloom Filter]
         end
 
-        subgraph "跳转模块"
-            RedirectAPI[302跳转API]
-            URLDecoder[URL解码器]
-            ParamsParser[参数解析器]
+        subgraph "Redirect Module"
+            RedirectAPI[302 Redirect API]
+            URLDecoder[URL Decoder]
+            ParamsParser[Parameter Parser]
         end
 
-        subgraph "统计模块"
-            PVCounter[PV计数器]
-            UVTracker[UV追踪器]
-            SourceTracker[来源追踪器]
+        subgraph "Analytics Module"
+            PVCounter[PV Counter]
+            UVTracker[UV Tracker]
+            SourceTracker[Source Tracker]
         end
     end
 
-    subgraph "存储层"
-        Redis[Redis缓存]
-        MySQL[MySQL数据库]
+    subgraph "Storage Layer"
+        Redis[Redis Cache]
+        MySQL[MySQL Database]
     end
 
-    subgraph "消息队列层"
+    subgraph "Message Queue Layer"
         RocketMQ[RocketMQ]
-        Producer[日志生产者]
-        Consumer[日志消费者]
+        Producer[Log Producer]
+        Consumer[Log Consumer]
     end
 
-    subgraph "数据仓库层"
+    subgraph "Data Warehouse Layer"
         DataWarehouse[ClickHouse/Hive]
-        Analytics[数据分析服务]
+        Analytics[Analytics Service]
     end
 
-    Client -->|HTTP请求| Gateway
+    Client -->|HTTP Request| Gateway
     Gateway --> Router
     Router --> GenAPI
     Router --> RedirectAPI
@@ -82,7 +82,7 @@ graph TB
     URLDecoder --> Redis
     URLDecoder --> ParamsParser
 
-    RedirectAPI -->|PV/UV/来源统计| PVCounter
+    RedirectAPI -->|PV/UV/Source Analytics| PVCounter
     PVCounter --> UVTracker
     UVTracker --> SourceTracker
 
@@ -95,174 +95,174 @@ graph TB
     DataWarehouse --> Analytics
 ```
 
-## 二、短链生成算法流程图
+## 2. Short Link Generation Algorithm
 
 ```mermaid
 flowchart TD
-    Start([开始]) --> Input[接收原始URL和参数]
-    Input --> Validate[验证URL格式]
+    Start([Start]) --> Input[Receive Original URL and Parameters]
+    Input --> Validate[Validate URL Format]
 
-    Validate -->|无效| Error1[返回错误]
-    Validate -->|有效| CheckCache{Redis缓存存在?}
+    Validate -->|Invalid| Error1[Return Error]
+    Validate -->|Valid| CheckCache{Exists in<br/>Redis Cache?}
 
-    CheckCache -->|是| Return1([返回已存在短链])
-    CheckCache -->|否| Hash[计算URL+参数的Hash]
+    CheckCache -->|Yes| Return1([Return Existing Short Link])
+    CheckCache -->|No| Hash[Calculate URL+Params Hash]
 
-    Hash --> BloomCheck{Bloom Filter<br/>检查冲突?}
+    Hash --> BloomCheck{Bloom Filter<br/>Collision Check?}
 
-    BloomCheck -->|可能冲突| CheckDB{数据库实际<br/>存在相同URL?}
+    BloomCheck -->|Possible Collision| CheckDB{Actually Exists<br/>in Database?}
 
-    BloomCheck -->|无冲突| Length4{4位足够?<br/>>=4^32种组合}
+    BloomCheck -->|No Collision| Length4{4 Chars Enough?<br/>>=4^32 Combinations}
 
-    CheckDB -->|是| Return1
-    CheckDB -->|否| Collision[发生哈希碰撞]
+    CheckDB -->|Yes| Return1
+    CheckDB -->|No| Collision[Hash Collision Occurred]
     Collision --> BloomCheck
 
-    Length4 -->|是| Encode4[Base32编码4位]
-    Length4 -->|否| Length6{6位足够?}
+    Length4 -->|Yes| Encode4[Base32 Encode 4 Chars]
+    Length4 -->|No| Length6{6 Chars Enough?}
 
-    Encode4 --> FinalCheck{最终冲突检查?}
+    Encode4 --> FinalCheck{Final Collision Check?}
 
-    Length6 -->|是| Encode6[Base32编码6位]
-    Length6 -->|否| Error2[超出容量限制]
+    Length6 -->|Yes| Encode6[Base32 Encode 6 Chars]
+    Length6 -->|No| Error2[Capacity Limit Exceeded]
 
     Encode6 --> FinalCheck
 
-    FinalCheck -->|有冲突| Retry[递增并重新编码]
-    FinalCheck -->|无冲突| SaveDB[保存到MySQL]
+    FinalCheck -->|Collision| Retry[Increment and Re-encode]
+    FinalCheck -->|No Collision| SaveDB[Save to MySQL]
 
     Retry --> FinalCheck
 
-    SaveDB --> SaveCache[写入Redis缓存]
-    SaveCache --> UpdateBloom[更新Bloom Filter]
-    UpdateBloom --> Return2([返回生成的短链])
+    SaveDB --> SaveCache[Write to Redis Cache]
+    SaveCache --> UpdateBloom[Update Bloom Filter]
+    UpdateBloom --> Return2([Return Generated Short Link])
 ```
 
-### 生成算法说明
+### Generation Algorithm Description
 
-1. **输入验证**: 验证原始 URL 格式是否合法
-2. **缓存检查**: 先检查 Redis 是否已存在相同 URL 的短链
-3. **Hash 计算**: 对 URL + 参数进行 Hash 计算
-4. **Bloom Filter 检查**: 使用 Redis Bloom Filter 快速判断是否可能存在冲突
-5. **数据库验证**: Bloom Filter 存在可能冲突时，查询数据库确认
-6. **Base32 编码**: 根据 Hash 值生成 4-6 位短链
-7. **冲突处理**: 检测到冲突时递增 Hash 值重新编码
-8. **持久化**: 保存到 MySQL 和 Redis，更新 Bloom Filter
+1. **Input Validation**: Validate the original URL format
+2. **Cache Check**: Check if a short link for this URL already exists in Redis
+3. **Hash Calculation**: Calculate hash of URL + parameters
+4. **Bloom Filter Check**: Use Redis Bloom Filter for fast collision detection
+5. **Database Verification**: Query database when Bloom Filter indicates possible collision
+6. **Base32 Encoding**: Generate 4-6 character short link from hash value
+7. **Collision Handling**: Increment hash value and re-encode when collision detected
+8. **Persistence**: Save to MySQL and Redis, update Bloom Filter
 
-## 三、短链跳转算法流程图
+## 3. Short Link Redirect Algorithm
 
 ```mermaid
 flowchart TD
-    Start([用户访问短链]) --> Parse[解析短链码]
-    Parse --> Extract[提取短链key和参数]
+    Start([User Visits Short Link]) --> Parse[Parse Short Code]
+    Parse --> Extract[Extract Short Key and Parameters]
 
-    Extract --> CheckCache{Redis<br/>缓存存在?}
+    Extract --> CheckCache{Exists in<br/>Redis Cache?}
 
-    CheckCache -->|是| GetURL[获取原始URL]
-    CheckCache -->|否| CheckDB{MySQL<br/>数据库存在?}
+    CheckCache -->|Yes| GetURL[Get Original URL]
+    CheckCache -->|No| CheckDB{Exists in<br/>MySQL Database?}
 
-    CheckDB -->|是| GetURL
-    CheckDB -->|否| Error404[返回404错误]
+    CheckDB -->|Yes| GetURL
+    CheckDB -->|No| Error404[Return 404 Error]
 
-    GetURL --> ParseParams[解析URL中的占位符参数]
-    ParseParams --> MergeParams[合并查询参数]
+    GetURL --> ParseParams[Parse URL Placeholder Parameters]
+    ParseParams --> MergeParams[Merge Query Parameters]
 
-    MergeParams --> BuildURL[构建完整目标URL]
+    MergeParams --> BuildURL[Build Complete Target URL]
 
-    BuildURL --> CollectPV[记录PV计数]
-    BuildURL --> CollectUV[记录UV计数<br/>基于Cookie/IP]
-    BuildURL --> CollectSource[记录来源信息<br/>Referer/UserAgent]
+    BuildURL --> CollectPV[Record PV Count]
+    BuildURL --> CollectUV[Record UV Count<br/>Based on Cookie/IP]
+    BuildURL --> CollectSource[Record Source Info<br/>Referer/UserAgent]
 
-    CollectPV --> SendMQ{发送到MQ?}
+    CollectPV --> SendMQ{Send to MQ?}
     CollectUV --> SendMQ
     CollectSource --> SendMQ
 
-    SendMQ -->|是| AsyncLog[异步写入RocketMQ]
-    SendMQ -->|否| LocalLog[本地日志降级]
+    SendMQ -->|Yes| AsyncLog[Async Write to RocketMQ]
+    SendMQ -->|No| LocalLog[Fallback to Local Log]
 
     AsyncLog --> Redirect
     LocalLog --> Redirect
 
-    Redirect([返回302跳转<br/>Location: 目标URL]) --> End([结束])
+    Redirect([Return 302 Redirect<br/>Location: Target URL]) --> End([End])
 
-    subgraph "异步处理流程"
-        MQConsumer[RocketMQ消费者] --> Batch[批量处理]
-        Batch --> DW[写入数据仓库]
-        DW --> Analytics[统计分析]
-        Analytics -->|PV/UV/热点| Report[报表展示]
+    subgraph "Async Processing Flow"
+        MQConsumer[RocketMQ Consumer] --> Batch[Batch Processing]
+        Batch --> DW[Write to Data Warehouse]
+        DW --> Analytics[Statistical Analysis]
+        Analytics -->|PV/UV/Hot Topics| Report[Report Display]
     end
 ```
 
-### 跳转算法说明
+### Redirect Algorithm Description
 
-1. **URL 解析**: 解析短链 key 和附带参数
-2. **查询原始 URL**: 优先从 Redis 获取，未命中则查询 MySQL
-3. **参数处理**: 解析 URL 占位符，合并查询参数
-4. **统计收集**: 收集 PV、UV 和来源信息
-5. **异步日志**: 将统计数据发送到 RocketMQ
-6. **302 跳转**: 返回 HTTP 302 状态码和 Location 头
+1. **URL Parsing**: Parse short link key and attached parameters
+2. **Query Original URL**: Get from Redis first, fallback to MySQL if cache miss
+3. **Parameter Processing**: Parse URL placeholders, merge query parameters
+4. **Analytics Collection**: Collect PV, UV and source information
+5. **Async Logging**: Send analytics data to RocketMQ
+6. **302 Redirect**: Return HTTP 302 status code with Location header
 
-## 四、Base32 编码说明
+## 4. Base32 Encoding
 
-### 字符集
+### Character Set
 
-Base32 使用字符集: `ABCDEFGHIJKLMNOPQRSTUVWXYZ234567`
+Base32 uses character set: `ABCDEFGHIJKLMNOPQRSTUVWXYZ234567`
 
-### 容量计算
+### Capacity Calculation
 
-| 短链长度 | 组合数量 | 说明 |
-|----------|----------|------|
-| 4 位 | 32^4 = 1,048,576 | 约 100 万，适合小规模使用 |
-| 5 位 | 32^5 = 33,554,432 | 约 3300 万，中等规模 |
-| 6 位 | 32^6 = 1,073,741,824 | 约 10 亿，大规模应用 |
+| Short Link Length | Combinations | Description |
+|-------------------|--------------|-------------|
+| 4 characters | 32^4 = 1,048,576 | ~1 million, suitable for small scale |
+| 5 characters | 32^5 = 33,554,432 | ~33 million, medium scale |
+| 6 characters | 32^6 = 1,073,741,824 | ~1 billion, large scale |
 
-### 编码策略
+### Encoding Strategy
 
-- 优先使用 4 位编码
-- 当 4 位冲突率高或容量不足时，自动升级到 5 位
-- 极端情况下使用 6 位
+- Prefer 4-character encoding
+- Auto-upgrade to 5 characters when 4-character collision rate is high or capacity insufficient
+- Use 6 characters in extreme cases
 
-## 五、项目结构
+## 5. Project Structure
 
 ```
 shortlink/
 ├── cmd/
 │   └── server/
-│       └── main.go           # 服务入口
+│       └── main.go           # Application entry point
 ├── internal/
 │   ├── handler/
-│   │   ├── generate.go       # 生成短链处理器
-│   │   └── redirect.go       # 跳转处理器
+│   │   ├── generate.go       # Generate short link handler
+│   │   └── redirect.go       # Redirect handler
 │   ├── service/
-│   │   ├── shortlink.go      # 短链服务
-│   │   ├── bloom.go          # Bloom Filter服务
-│   │   └── analytics.go      # 统计服务
+│   │   ├── shortlink.go      # Short link service
+│   │   ├── bloom.go          # Bloom Filter service
+│   │   └── analytics.go      # Analytics service
 │   ├── repository/
-│   │   ├── redis.go          # Redis操作
-│   │   └── mysql.go          # MySQL操作
+│   │   ├── redis.go          # Redis operations
+│   │   └── mysql.go          # MySQL operations
 │   ├── mq/
-│   │   ├── producer.go       # RocketMQ生产者
-│   │   └── consumer.go       # RocketMQ消费者
+│   │   ├── producer.go       # RocketMQ producer
+│   │   └── consumer.go       # RocketMQ consumer
 │   ├── encoder/
-│   │   └── base32.go         # Base32编码器
+│   │   └── base32.go         # Base32 encoder
 │   └── model/
-│       ├── shortlink.go      # 短链数据模型
-│       └── access_log.go     # 访问日志模型
+│       ├── shortlink.go      # Short link data model
+│       └── access_log.go     # Access log model
 ├── pkg/
 │   ├── config/
-│   │   └── config.go         # 配置管理
+│   │   └── config.go         # Configuration management
 │   └── middleware/
-│       ├── logger.go         # 日志中间件
-│       └── recovery.go       # 异常恢复
+│       ├── logger.go         # Logging middleware
+│       └── recovery.go       # Panic recovery
 ├── go.mod
 └── go.sum
 ```
 
-## 六、API 接口设计
+## 6. API Design
 
-### 1. 生成短链
+### 1. Generate Short Link
 
-**请求**
+**Request**
 
 ```http
 POST /api/v1/shortlink/generate
@@ -277,7 +277,7 @@ Content-Type: application/json
 }
 ```
 
-**响应**
+**Response**
 
 ```json
 {
@@ -292,30 +292,30 @@ Content-Type: application/json
 }
 ```
 
-### 2. 短链跳转
+### 2. Short Link Redirect
 
-**请求**
+**Request**
 
 ```http
 GET /AbCd?param1=value1
 ```
 
-**响应**
+**Response**
 
 ```http
 HTTP/1.1 302 Found
 Location: https://example.com/path?param1=value1&utm_source=wechat&campaign=promo123
 ```
 
-### 3. 统计查询
+### 3. Analytics Query
 
-**请求**
+**Request**
 
 ```http
 GET /api/v1/analytics/AbCd
 ```
 
-**响应**
+**Response**
 
 ```json
 {
@@ -334,52 +334,52 @@ GET /api/v1/analytics/AbCd
 }
 ```
 
-## 七、数据模型
+## 7. Data Models
 
-### 短链表 (short_links)
+### Short Links Table (short_links)
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | bigint | 主键 |
-| short_code | varchar(6) | 短链码 |
-| original_url | varchar(2048) | 原始URL |
-| params | json | 参数模板 |
-| created_at | datetime | 创建时间 |
-| expire_at | datetime | 过期时间 |
-| status | tinyint | 状态：1-正常，0-禁用 |
+| Field | Type | Description |
+|-------|------|-------------|
+| id | bigint | Primary key |
+| short_code | varchar(6) | Short code |
+| original_url | varchar(2048) | Original URL |
+| params | json | Parameter template |
+| created_at | datetime | Creation time |
+| expire_at | datetime | Expiration time |
+| status | tinyint | Status: 1-active, 0-disabled |
 
-### 访问日志表 (access_logs)
+### Access Logs Table (access_logs)
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| id | bigint | 主键 |
-| short_code | varchar(6) | 短链码 |
-| client_ip | varchar(64) | 客户端IP |
+| Field | Type | Description |
+|-------|------|-------------|
+| id | bigint | Primary key |
+| short_code | varchar(6) | Short code |
+| client_ip | varchar(64) | Client IP |
 | user_agent | varchar(512) | User-Agent |
-| referer | varchar(512) | 来源页面 |
-| access_time | datetime | 访问时间 |
+| referer | varchar(512) | Referrer page |
+| access_time | datetime | Access time |
 
-## 八、核心功能点
+## 8. Core Features
 
-### 1. 碰撞检测
+### 1. Collision Detection
 
-- 使用 Redis Bloom Filter 进行快速预检测
-- Bloom Filter 误报时进行数据库精确查询
-- 发生冲突时递增 Hash 值重新编码
+- Use Redis Bloom Filter for fast pre-check
+- Perform exact database query on Bloom Filter false positives
+- Increment hash value and re-encode on collision
 
-### 2. PV/UV 统计
+### 2. PV/UV Analytics
 
-- **PV (Page View)**: 每次访问计数，存储在 Redis Counter
-- **UV (Unique Visitor)**: 基于用户 Cookie/IP 去重统计
+- **PV (Page View)**: Count every visit, stored in Redis Counter
+- **UV (Unique Visitor)**: Deduplicated statistics based on user Cookie/IP
 
-### 3. 热点来源分析
+### 3. Traffic Source Analysis
 
-- 解析 HTTP Referer 头获取访问来源
-- 统计各来源的访问次数
-- 识别热点推广渠道
+- Parse HTTP Referer header to get traffic source
+- Count visits from each source
+- Identify hot promotion channels
 
-### 4. 异步日志回填
+### 4. Async Log Processing
 
-- 访问日志先写入 RocketMQ
-- 消费者批量处理写入数据仓库
-- 保证服务高可用，MQ 故障时降级到本地日志
+- Access logs are first written to RocketMQ
+- Consumer batch processes and writes to data warehouse
+- Ensures high availability, falls back to local logging on MQ failure
