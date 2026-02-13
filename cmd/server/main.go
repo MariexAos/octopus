@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -49,10 +50,18 @@ func main() {
 
 	// Initialize repositories
 	redisRepo := repository.NewRedisRepository(&cfg.Database.Redis)
-	defer redisRepo.Close()
+	defer func() {
+		if err := redisRepo.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close redis connection")
+		}
+	}()
 
 	mysqlRepo := repository.NewMySQLRepository(&cfg.Database.MySQL)
-	defer mysqlRepo.Close()
+	defer func() {
+		if err := mysqlRepo.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close mysql connection")
+		}
+	}()
 
 	// Initialize services
 	bloomSvc := service.NewBloomService(redisRepo.GetClient(), &cfg.Bloom)
@@ -128,7 +137,11 @@ func main() {
 					log.Error().Err(err).Msg("Failed to subscribe to RocketMQ")
 				}
 			}()
-			defer mqConsumer.Close()
+			defer func() {
+				if err := mqConsumer.Close(); err != nil {
+					log.Error().Err(err).Msg("Failed to close RocketMQ consumer")
+				}
+			}()
 		}
 	}
 
@@ -141,7 +154,7 @@ func main() {
 	// Graceful shutdown
 	go func() {
 		log.Info().Msgf("Starting server on port %d", cfg.Server.Port)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal().Err(err).Msg("Failed to start server")
 		}
 	}()
@@ -155,7 +168,9 @@ func main() {
 
 	// Close producer
 	if mqProducer != nil {
-		mqProducer.Close()
+		if err := mqProducer.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close RocketMQ producer")
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

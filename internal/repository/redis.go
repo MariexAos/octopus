@@ -130,6 +130,7 @@ func (r *RedisRepository) GetUV(ctx context.Context, shortCode string) (int64, e
 	for _, key := range keys {
 		count, err := r.client.SCard(ctx, key).Result()
 		if err != nil {
+			log.Warn().Err(err).Str("key", key).Msg("Failed to get UV count from Redis")
 			continue
 		}
 		totalUV += count
@@ -166,6 +167,7 @@ func (r *RedisRepository) GetSources(ctx context.Context, shortCode string) (map
 		key := iter.Val()
 		count, err := r.client.Get(ctx, key).Int64()
 		if err != nil {
+			log.Warn().Err(err).Str("key", key).Msg("Failed to get source count from Redis")
 			continue
 		}
 		// Extract source name from key
